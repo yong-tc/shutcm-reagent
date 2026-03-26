@@ -1,0 +1,13 @@
+name: Keep App Alive
+
+on:
+  schedule:
+    # 每 10 小时执行一次（UTC 时间 0:00, 10:00, 20:00）
+    - cron: '0 */10 * * *'
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: curl -s https://你的应用URL.streamlit.app?health=1 > /dev/null
