@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime
-import hashlib
+from datetime import datetime, date
 
 # ==================== 数据库初始化 ====================
 DB_PATH = "reagent.db"
@@ -65,14 +64,26 @@ def get_reagents():
     conn.close()
     return df
 
-def get_transactions():
+def get_transactions(start_date=None, end_date=None, reagent_id=None):
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("""
+    query = """
         SELECT t.id, t.timestamp, r.code, r.name, t.type, t.quantity, t.operator, t.remark
         FROM transactions t
         LEFT JOIN reagents r ON t.reagent_id = r.id
-        ORDER BY t.timestamp DESC
-    """, conn)
+        WHERE 1=1
+    """
+    params = []
+    if start_date:
+        query += " AND date(t.timestamp) >= ?"
+        params.append(start_date.isoformat())
+    if end_date:
+        query += " AND date(t.timestamp) <= ?"
+        params.append(end_date.isoformat())
+    if reagent_id:
+        query += " AND t.reagent_id = ?"
+        params.append(reagent_id)
+    query += " ORDER BY t.timestamp DESC"
+    df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
@@ -170,7 +181,7 @@ def check_password():
             st.error("用户名或密码错误")
     return False
 
-# ==================== 页面组件 ====================
+# ==================== 库存管理页面 ====================
 def show_inventory():
     st.header("📦 试剂库存管理")
     col1, col2 = st.columns([3, 1])
@@ -262,7 +273,6 @@ def show_inventory():
                     st.rerun()
 
     with tab4:
-        # 编辑/删除
         if df.empty:
             st.info("暂无试剂")
         else:
@@ -294,9 +304,8 @@ def show_inventory():
                         delete_reagent(reagent_id)
                         st.rerun()
 
-    # 打印按钮：利用st.components.v1.html生成包含表格和打印脚本的iframe
+    # 打印按钮
     if st.button("🖨️ 打印库存清单"):
-        # 生成HTML表格
         html_table = display_df.to_html(index=False, classes='table table-bordered table-striped', escape=False)
         print_html = f"""
         <html>
@@ -332,27 +341,62 @@ def show_inventory():
         """
         st.components.v1.html(print_html, height=0, scrolling=False)
 
+# ==================== 出入库记录页面 ====================
 def show_transactions():
     st.header("📜 出入库流水记录")
-    df = get_transactions()
+
+    # 高级筛选
+    with st.expander("🔍 高级筛选（可选）", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            start_date = st.date_input("起始日期", value=None, key="start_date")
+        with col2:
+            end_date = st.date_input("结束日期", value=None, key="end_date")
+        with col3:
+            conn = sqlite3.connect(DB_PATH)
+            reagents_df = pd.read_sql_query("SELECT id, name FROM reagents ORDER BY name", conn)
+            conn.close()
+            reagent_options = {"全部": None}
+            for _, row in reagents_df.iterrows():
+                reagent_options[f"{row['name']} (ID:{row['id']})"] = row['id']
+            selected_reagent = st.selectbox("选择试剂", list(reagent_options.keys()), key="reagent_filter")
+            reagent_id = reagent_options[selected_reagent]
+        search = st.text_input("快速搜索（试剂名称/编号/操作人）", placeholder="输入关键词...")
+        apply_filter = st.button("应用筛选")
+
+    if 'filtered_df' not in st.session_state or apply_filter:
+        df = get_transactions(start_date, end_date, reagent_id)
+        if search:
+            df = df[df.apply(lambda row: search.lower() in str(row['name']).lower() or 
+                                       search.lower() in str(row['code']).lower() or 
+                                       search.lower() in str(row['operator']).lower(), axis=1)]
+        st.session_state.filtered_df = df
+    else:
+        df = st.session_state.filtered_df
+
     if df.empty:
-        st.info("暂无交易记录")
+        st.info("暂无符合条件的交易记录")
         return
 
-    # 搜索框
-    search = st.text_input("搜索试剂名称/编号/操作人", placeholder="输入关键词...")
-    if search:
-        df = df[df.apply(lambda row: search.lower() in str(row['name']).lower() or 
-                                   search.lower() in str(row['code']).lower() or 
-                                   search.lower() in str(row['operator']).lower(), axis=1)]
-
+    # 显示表格
     display_df = df[['timestamp', 'code', 'name', 'type', 'quantity', 'operator', 'remark']].copy()
     display_df.columns = ['时间', '试剂编号', '试剂名称', '类型', '数量', '操作人', '备注']
     display_df['类型'] = display_df['类型'].map({'in': '入库', 'out': '出库'})
     st.dataframe(display_df, use_container_width=True)
 
     # 打印按钮
-    if st.button("🖨️ 打印出入库记录"):
+    if st.button("🖨️ 打印当前筛选结果"):
+        filter_desc = []
+        if start_date:
+            filter_desc.append(f"起始日期：{start_date}")
+        if end_date:
+            filter_desc.append(f"结束日期：{end_date}")
+        if selected_reagent != "全部":
+            filter_desc.append(f"试剂：{selected_reagent}")
+        if search:
+            filter_desc.append(f"关键词：{search}")
+        filter_text = "；".join(filter_desc) if filter_desc else "无筛选条件"
+
         html_table = display_df.to_html(index=False, classes='table table-bordered table-striped', escape=False)
         print_html = f"""
         <html>
@@ -361,6 +405,7 @@ def show_transactions():
             <style>
                 body {{ font-family: 'SimHei', 'Microsoft YaHei', sans-serif; margin: 20px; }}
                 .header {{ text-align: center; margin-bottom: 20px; }}
+                .filter-info {{ margin-bottom: 15px; padding: 8px; background-color: #f5f5f5; border-left: 4px solid #0d6efd; }}
                 .footer {{ text-align: center; margin-top: 20px; font-size: 12px; }}
                 table {{ width: 100%; border-collapse: collapse; }}
                 th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
@@ -375,6 +420,9 @@ def show_transactions():
                 <h2>上海中医药大学中药学院实验教学中心</h2>
                 <p>试剂出入库记录</p>
                 <p>打印时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </div>
+            <div class="filter-info">
+                <strong>当前筛选条件：</strong> {filter_text}
             </div>
             {html_table}
             <div class="footer">
