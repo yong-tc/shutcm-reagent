@@ -3,6 +3,9 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, date
 
+# ==================== 必须在所有 Streamlit 命令之前 ====================
+st.set_page_config(page_title="中药学院试剂管理系统", layout="wide")
+
 # ==================== 数据库初始化 ====================
 DB_PATH = "reagent.db"
 
@@ -172,7 +175,6 @@ def check_password():
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     if st.button("登录"):
-        # 硬编码用户 ZY / 513513
         if username == "ZY" and password == "513513":
             st.session_state.authenticated = True
             st.success("登录成功")
@@ -180,6 +182,17 @@ def check_password():
         else:
             st.error("用户名或密码错误")
     return False
+
+# ==================== 健康检查（可选）====================
+def health_check():
+    # 兼容旧版 Streamlit
+    try:
+        params = st.query_params
+    except AttributeError:
+        params = st.experimental_get_query_params()
+    if params.get("health") == ["1"]:
+        st.write("OK")
+        st.stop()
 
 # ==================== 库存管理页面 ====================
 def show_inventory():
@@ -439,10 +452,10 @@ def show_transactions():
 # ==================== 主程序 ====================
 def main():
     init_db()
+    health_check()          # 健康检查，必须在 st.set_page_config 之后
     if not check_password():
         return
 
-    st.set_page_config(page_title="中药学院试剂管理系统", layout="wide")
     st.sidebar.title("导航")
     page = st.sidebar.radio("功能选择", ["库存管理", "出入库记录"])
     if page == "库存管理":
