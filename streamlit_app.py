@@ -1,164 +1,222 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from datetime import datetime, date
+from datetime import datetime, timezone
+from supabase import create_client, Client
+import os
 
 # ==================== 必须在所有 Streamlit 命令之前 ====================
 st.set_page_config(page_title="中药学院试剂管理系统", layout="wide")
 
-# ==================== 数据库初始化 ====================
-DB_PATH = "reagent.db"
+# ==================== Supabase 客户端初始化 ====================
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    # 试剂表
-    c.execute('''CREATE TABLE IF NOT EXISTS reagents
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  code TEXT UNIQUE,
-                  name TEXT,
-                  cas_no TEXT,
-                  specification TEXT,
-                  unit TEXT,
-                  stock INTEGER,
-                  min_stock INTEGER,
-                  max_stock INTEGER,
-                  location TEXT,
-                  created_at TEXT,
-                  updated_at TEXT)''')
-    # 交易记录表
-    c.execute('''CREATE TABLE IF NOT EXISTS transactions
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  reagent_id INTEGER,
-                  type TEXT,
-                  quantity INTEGER,
-                  operator TEXT,
-                  remark TEXT,
-                  timestamp TEXT,
-                  FOREIGN KEY(reagent_id) REFERENCES reagents(id))''')
-    # 插入演示数据（若为空）
-    c.execute("SELECT COUNT(*) FROM reagents")
-    if c.fetchone()[0] == 0:
+supabase = init_supabase()
+
+# ==================== 演示数据初始化 ====================
+def init_demo_data():
+    """如果 reagents 表为空，插入演示数据"""
+    resp = supabase.table("reagents").select("id").limit(1).execute()
+    if len(resp.data) == 0:
+        now = datetime.now(timezone.utc).isoformat()
         demo_reagents = [
-            ('R001', '无水乙醇', '64-17-5', '500ml/瓶', '瓶', 50, 10, 100, '试剂柜A1', datetime.now().isoformat(), datetime.now().isoformat()),
-            ('R002', '甲醇', '67-56-1', 'HPLC 4L', '桶', 8, 2, 20, '通风橱B2', datetime.now().isoformat(), datetime.now().isoformat()),
-            ('R003', '乙酸乙酯', '141-78-6', '500ml/瓶', '瓶', 30, 5, 60, '试剂柜A2', datetime.now().isoformat(), datetime.now().isoformat()),
+            {
+                "code": "R001",
+                "name": "无水乙醇",
+                "cas_no": "64-17-5",
+                "specification": "500ml/瓶",
+                "unit": "瓶",
+                "stock": 50,
+                "min_stock": 10,
+                "max_stock": 100,
+                "location": "试剂柜A1",
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "code": "R002",
+                "name": "甲醇",
+                "cas_no": "67-56-1",
+                "specification": "HPLC 4L",
+                "unit": "桶",
+                "stock": 8,
+                "min_stock": 2,
+                "max_stock": 20,
+                "location": "通风橱B2",
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "code": "R003",
+                "name": "乙酸乙酯",
+                "cas_no": "141-78-6",
+                "specification": "500ml/瓶",
+                "unit": "瓶",
+                "stock": 30,
+                "min_stock": 5,
+                "max_stock": 60,
+                "location": "试剂柜A2",
+                "created_at": now,
+                "updated_at": now,
+            },
         ]
-        c.executemany("INSERT INTO reagents (code,name,cas_no,specification,unit,stock,min_stock,max_stock,location,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", demo_reagents)
-        conn.commit()
-        # 示例交易记录
-        c.execute("SELECT id FROM reagents WHERE code='R001'")
-        r1 = c.fetchone()[0]
-        c.execute("SELECT id FROM reagents WHERE code='R002'")
-        r2 = c.fetchone()[0]
+        for reagent in demo_reagents:
+            supabase.table("reagents").insert(reagent).execute()
+
+        # 获取刚插入的试剂 ID 并添加交易记录
+        resp = supabase.table("reagents").select("id, code").execute()
+        id_map = {row["code"]: row["id"] for row in resp.data}
         demo_trans = [
-            (r1, 'in', 20, '张老师', '新采购', datetime.now().isoformat()),
-            (r1, 'out', 5, '李同学', '实验教学', datetime.now().isoformat()),
-            (r2, 'in', 5, '王老师', '补充库存', datetime.now().isoformat()),
+            {
+                "reagent_id": id_map["R001"],
+                "type": "in",
+                "quantity": 20,
+                "operator": "张老师",
+                "remark": "新采购",
+                "timestamp": now,
+            },
+            {
+                "reagent_id": id_map["R001"],
+                "type": "out",
+                "quantity": 5,
+                "operator": "李同学",
+                "remark": "实验教学",
+                "timestamp": now,
+            },
+            {
+                "reagent_id": id_map["R002"],
+                "type": "in",
+                "quantity": 5,
+                "operator": "王老师",
+                "remark": "补充库存",
+                "timestamp": now,
+            },
         ]
-        c.executemany("INSERT INTO transactions (reagent_id,type,quantity,operator,remark,timestamp) VALUES (?,?,?,?,?,?)", demo_trans)
-        conn.commit()
-    conn.close()
+        for trans in demo_trans:
+            supabase.table("transactions").insert(trans).execute()
 
 # ==================== 辅助函数 ====================
 def get_reagents():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM reagents ORDER BY code", conn)
-    conn.close()
+    """获取所有试剂，返回DataFrame"""
+    response = supabase.table("reagents").select("*").order("code").execute()
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame()
     return df
 
 def get_transactions(start_date=None, end_date=None, reagent_id=None):
-    conn = sqlite3.connect(DB_PATH)
-    query = """
-        SELECT t.id, t.timestamp, r.code, r.name, t.type, t.quantity, t.operator, t.remark
-        FROM transactions t
-        LEFT JOIN reagents r ON t.reagent_id = r.id
-        WHERE 1=1
-    """
-    params = []
+    """根据条件获取交易记录"""
+    query = supabase.table("transactions").select(
+        "id, timestamp, reagent_id, type, quantity, operator, remark, reagents!inner(code, name)"
+    )
     if start_date:
-        query += " AND date(t.timestamp) >= ?"
-        params.append(start_date.isoformat())
+        query = query.gte("timestamp", start_date.isoformat())
     if end_date:
-        query += " AND date(t.timestamp) <= ?"
-        params.append(end_date.isoformat())
+        query = query.lte("timestamp", end_date.isoformat())
     if reagent_id:
-        query += " AND t.reagent_id = ?"
-        params.append(reagent_id)
-    query += " ORDER BY t.timestamp DESC"
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+        query = query.eq("reagent_id", reagent_id)
+    query = query.order("timestamp", desc=True)
+    response = query.execute()
+    data = response.data
+    # 展开reagents信息
+    for row in data:
+        row["code"] = row["reagents"]["code"]
+        row["name"] = row["reagents"]["name"]
+        del row["reagents"]
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame()
     return df
 
 def add_reagent(code, name, cas_no, spec, unit, stock, min_stock, max_stock, location):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     try:
-        c.execute("INSERT INTO reagents (code,name,cas_no,specification,unit,stock,min_stock,max_stock,location,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                  (code, name, cas_no, spec, unit, stock, min_stock, max_stock, location, now, now))
-        conn.commit()
+        supabase.table("reagents").insert({
+            "code": code,
+            "name": name,
+            "cas_no": cas_no,
+            "specification": spec,
+            "unit": unit,
+            "stock": stock,
+            "min_stock": min_stock,
+            "max_stock": max_stock,
+            "location": location,
+            "created_at": now,
+            "updated_at": now
+        }).execute()
         st.success("试剂添加成功")
-    except sqlite3.IntegrityError:
-        st.error("试剂编号已存在，请使用唯一编号")
-    conn.close()
+    except Exception as e:
+        if "duplicate key value violates unique constraint" in str(e):
+            st.error("试剂编号已存在，请使用唯一编号")
+        else:
+            st.error(f"添加失败：{e}")
 
 def update_reagent(id, code, name, cas_no, spec, unit, stock, min_stock, max_stock, location):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     try:
-        c.execute("UPDATE reagents SET code=?, name=?, cas_no=?, specification=?, unit=?, stock=?, min_stock=?, max_stock=?, location=?, updated_at=? WHERE id=?",
-                  (code, name, cas_no, spec, unit, stock, min_stock, max_stock, location, now, id))
-        conn.commit()
+        supabase.table("reagents").update({
+            "code": code,
+            "name": name,
+            "cas_no": cas_no,
+            "specification": spec,
+            "unit": unit,
+            "stock": stock,
+            "min_stock": min_stock,
+            "max_stock": max_stock,
+            "location": location,
+            "updated_at": now
+        }).eq("id", id).execute()
         st.success("试剂信息更新成功")
-    except sqlite3.IntegrityError:
-        st.error("试剂编号与其他记录冲突")
-    conn.close()
+    except Exception as e:
+        if "duplicate key value violates unique constraint" in str(e):
+            st.error("试剂编号与其他记录冲突")
+        else:
+            st.error(f"更新失败：{e}")
 
 def delete_reagent(id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
     # 检查是否有交易记录
-    c.execute("SELECT COUNT(*) FROM transactions WHERE reagent_id=?", (id,))
-    if c.fetchone()[0] > 0:
+    trans_resp = supabase.table("transactions").select("id").eq("reagent_id", id).execute()
+    if len(trans_resp.data) > 0:
         st.error("该试剂存在出入库记录，无法删除")
-        conn.close()
         return
-    c.execute("SELECT stock FROM reagents WHERE id=?", (id,))
-    stock = c.fetchone()[0]
-    if stock != 0:
+    # 检查库存
+    reagent_resp = supabase.table("reagents").select("stock").eq("id", id).execute()
+    if reagent_resp.data and reagent_resp.data[0]["stock"] != 0:
         st.error("当前库存不为0，请先处理库存后再删除")
-        conn.close()
         return
-    c.execute("DELETE FROM reagents WHERE id=?", (id,))
-    conn.commit()
+    supabase.table("reagents").delete().eq("id", id).execute()
     st.success("试剂已删除")
-    conn.close()
 
 def stock_change(reagent_id, change_type, quantity, operator, remark):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    # 获取试剂信息
-    c.execute("SELECT name, unit, stock FROM reagents WHERE id=?", (reagent_id,))
-    row = c.fetchone()
-    if not row:
+    # 获取当前库存
+    resp = supabase.table("reagents").select("name, unit, stock").eq("id", reagent_id).execute()
+    if not resp.data:
         st.error("试剂不存在")
-        conn.close()
         return False
-    name, unit, current_stock = row
+    row = resp.data[0]
+    name, unit, current_stock = row["name"], row["unit"], row["stock"]
     quantity = int(quantity)
+
     if change_type == 'out' and current_stock < quantity:
         st.error(f"库存不足！当前库存 {current_stock}{unit}，出库 {quantity}{unit} 失败")
-        conn.close()
         return False
+
     new_stock = current_stock + quantity if change_type == 'in' else current_stock - quantity
-    c.execute("UPDATE reagents SET stock=? WHERE id=?", (new_stock, reagent_id))
-    c.execute("INSERT INTO transactions (reagent_id, type, quantity, operator, remark, timestamp) VALUES (?,?,?,?,?,?)",
-              (reagent_id, change_type, quantity, operator, remark, datetime.now().isoformat()))
-    conn.commit()
+
+    # 更新库存
+    supabase.table("reagents").update({"stock": new_stock}).eq("id", reagent_id).execute()
+    # 添加交易记录
+    supabase.table("transactions").insert({
+        "reagent_id": reagent_id,
+        "type": change_type,
+        "quantity": quantity,
+        "operator": operator,
+        "remark": remark,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }).execute()
     st.success(f"试剂 {name} {('入库' if change_type=='in' else '出库')} {quantity}{unit} 成功")
-    conn.close()
     return True
 
 # ==================== 登录验证 ====================
@@ -185,7 +243,6 @@ def check_password():
 
 # ==================== 健康检查（可选）====================
 def health_check():
-    # 兼容旧版 Streamlit
     try:
         params = st.query_params
     except AttributeError:
@@ -206,10 +263,14 @@ def show_inventory():
             st.rerun()
 
     df = get_reagents()
-    if search:
+    if not df.empty and search:
         df = df[df.apply(lambda row: search.lower() in str(row['code']).lower() or 
                                    search.lower() in str(row['name']).lower() or 
                                    search.lower() in str(row['cas_no']).lower(), axis=1)]
+
+    if df.empty:
+        st.info("暂无试剂数据")
+        return
 
     # 显示表格
     display_df = df[['id', 'code', 'name', 'cas_no', 'specification', 'unit', 'stock', 'min_stock', 'max_stock', 'location']].copy()
@@ -366,20 +427,22 @@ def show_transactions():
         with col2:
             end_date = st.date_input("结束日期", value=None, key="end_date")
         with col3:
-            conn = sqlite3.connect(DB_PATH)
-            reagents_df = pd.read_sql_query("SELECT id, name FROM reagents ORDER BY name", conn)
-            conn.close()
-            reagent_options = {"全部": None}
-            for _, row in reagents_df.iterrows():
-                reagent_options[f"{row['name']} (ID:{row['id']})"] = row['id']
-            selected_reagent = st.selectbox("选择试剂", list(reagent_options.keys()), key="reagent_filter")
-            reagent_id = reagent_options[selected_reagent]
+            reagents_df = get_reagents()
+            if not reagents_df.empty:
+                reagent_options = {"全部": None}
+                for _, row in reagents_df.iterrows():
+                    reagent_options[f"{row['name']} (ID:{row['id']})"] = row['id']
+                selected_reagent = st.selectbox("选择试剂", list(reagent_options.keys()), key="reagent_filter")
+                reagent_id = reagent_options[selected_reagent]
+            else:
+                selected_reagent = "全部"
+                reagent_id = None
         search = st.text_input("快速搜索（试剂名称/编号/操作人）", placeholder="输入关键词...")
         apply_filter = st.button("应用筛选")
 
     if 'filtered_df' not in st.session_state or apply_filter:
         df = get_transactions(start_date, end_date, reagent_id)
-        if search:
+        if not df.empty and search:
             df = df[df.apply(lambda row: search.lower() in str(row['name']).lower() or 
                                        search.lower() in str(row['code']).lower() or 
                                        search.lower() in str(row['operator']).lower(), axis=1)]
@@ -451,10 +514,12 @@ def show_transactions():
 
 # ==================== 主程序 ====================
 def main():
-    init_db()
-    health_check()          # 健康检查，必须在 st.set_page_config 之后
+    health_check()
     if not check_password():
         return
+
+    # 初始化演示数据（如果表为空）
+    init_demo_data()
 
     st.sidebar.title("导航")
     page = st.sidebar.radio("功能选择", ["库存管理", "出入库记录"])
