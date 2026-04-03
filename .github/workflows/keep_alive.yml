@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Streamlit App
-        run: curl -s https://你的应用URL.streamlit.app?health=1 > /dev/null
+        run: curl -s https://shutcm-reagent.streamlit.app
