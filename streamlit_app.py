@@ -235,6 +235,8 @@ def stock_change(reagent_id, change_type, quantity, operator, remark):
     st.success(f"试剂 {name} {('入库' if change_type=='in' else '出库')} {quantity}{unit} 成功")
     return True
 
+# ... 前面的导入和配置 ...
+
 # ==================== 登录验证 ====================
 def check_password():
     """返回 True 表示已登录，False 表示未登录"""
@@ -256,6 +258,15 @@ def check_password():
         else:
             st.error("用户名或密码错误")
     return False
+
+# ==================== 页面主逻辑 ====================
+# 登录验证已取消 - 2026-07-03
+# if not check_password():
+#     st.stop()
+
+# 下面是你的应用主界面代码
+st.title("试剂出入库管理系统主界面")
+# ... 你的业务逻辑 ...
 
 # ==================== 健康检查（可选）====================
 def health_check():
