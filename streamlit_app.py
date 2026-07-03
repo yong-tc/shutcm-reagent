@@ -1,26 +1,26 @@
 import streamlit as st
-import psycopg2
+from supabase import create_client
 
 # =============================================
-# 🚀 保活后门（通过 ?ping=1 唤醒，绕过所有验证）
+# 🚀 保活后门（通过 ?ping=1 唤醒，使用 REST API）
 # =============================================
 if "ping" in st.query_params:
-    # 为保活响应设置独立的页面配置
-    st.set_page_config(page_title="Health Check", layout="centered")
     try:
-        DATABASE_URL = "postgresql://postgres:你的实际密码@db.fvrzorvuebxfauegttfv.supabase.co:5432/postgres"
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        cursor.close()
-        conn.close()
-        # 使用 st.write 输出纯文本，确保兼容性
+        # 从 secrets 中读取 Supabase 连接信息
+        supabase_url = st.secrets["SUPABASE_URL"]
+        supabase_key = st.secrets["SUPABASE_KEY"]
+        supabase = create_client(supabase_url, supabase_key)
+        
+        # 调用 REST API 执行轻量级查询（查询系统表，不产生副作用）
+        # 这能有效刷新 Supabase 的 7 天活动计时器
+        result = supabase.table("reagents").select("count").execute()
+        
         st.write("Database Alive")
     except Exception as e:
+        # 如果出错，将错误信息显示出来方便调试
         st.write(f"Error: {e}")
-    st.stop()  # 强制终止，不执行任何后续代码
+    st.stop()  # 强制停止，不执行后续代码
 
-# ==================== 正常应用代码 ====================
 import pandas as pd
 from datetime import datetime, timezone
 from supabase import create_client, Client
