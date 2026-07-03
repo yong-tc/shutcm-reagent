@@ -237,27 +237,6 @@ def stock_change(reagent_id, change_type, quantity, operator, remark):
 
 # ... 前面的导入和配置 ...
 
-# ==================== 登录验证 ====================
-def check_password():
-    """返回 True 表示已登录，False 表示未登录"""
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-
-    if st.session_state.authenticated:
-        return True
-
-    st.title("试剂出入库管理系统")
-    st.write("请输入用户名和密码")
-    username = st.text_input("用户名")
-    password = st.text_input("密码", type="password")
-    if st.button("登录"):
-        if username == "ZY" and password == "513513":
-            st.session_state.authenticated = True
-            st.success("登录成功")
-            st.rerun()
-        else:
-            st.error("用户名或密码错误")
-    return False
 
 # ==================== 页面主逻辑 ====================
 # 登录验证已取消 - 2026-07-03
