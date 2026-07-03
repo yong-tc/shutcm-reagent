@@ -1,28 +1,19 @@
 import streamlit as st
-from supabase import create_client
+import psycopg2
 
-# =============================================
-# 🚀 保活后门（通过 ?ping=1 唤醒，绕过密码校验）
-# =============================================
 if "ping" in st.query_params:
     try:
-        SUPABASE_URL = "https://fvrzorvuebxfauegttfv.supabase.co"
-        SUPABASE_KEY = "sb_publishable_V8p_pjaQzp9qF01BbMoI2A_s7Y1wAmA"
-        
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
-        # ✅ 终极必杀：查询 auth.users（Supabase 自带的认证用户表，绝对存在！）
-        response = supabase.table("auth.users").select("id").limit(1).execute()
-        
-        # 如果上面的查询成功了，这里会正常输出
-        st.json({"status": "Database Alive", "msg": "Keep-alive successful"})
+        # 直接将连接串写在这里（替换成你的）
+        DATABASE_URL = "postgresql://postgres:你的实际密码@db.fvrzorvuebxfauegttfv.supabase.co:5432/postgres"
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
+        conn.close()
+        st.json({"status": "Database Alive"})
     except Exception as e:
         st.json({"status": "error", "message": str(e)})
-    
     st.stop()
-# =============================================
-
-# 下方继续写你原本的代码（登录逻辑、业务代码等）
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
