@@ -11,8 +11,14 @@ if "ping" in st.query_params:
         
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # ✅ 改成查询系统表（100% 不会改动任何数据）
-        supabase.table("pg_stat_database").select("datname").limit(1).execute()
+        # ✅ 方法1：调用 Supabase 内置的 version 函数（推荐）
+        supabase.rpc("version").execute()
+        
+        # 如果方法1不行，把上面这行注释掉，换成下面方法2或3：
+        # 方法2：查询 auth.users（系统自带，肯定存在）
+        # supabase.table("auth.users").select("id").limit(1).execute()
+        # 方法3：查询你自己的业务表（比如 "users"），把表名换成你的
+        # supabase.table("你的表名").select("*").limit(1).execute()
         
         st.json({"status": "Database Alive", "msg": "Keep-alive successful"})
     except Exception as e:
