@@ -1,9 +1,11 @@
 import streamlit as st
 import psycopg2
 
+# =============================================
+# 🚀 保活后门（通过 ?ping=1 唤醒，绕过所有验证）
+# =============================================
 if "ping" in st.query_params:
     try:
-        # 直接将连接串写在这里（替换成你的）
         DATABASE_URL = "postgresql://postgres:你的实际密码@db.fvrzorvuebxfauegttfv.supabase.co:5432/postgres"
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -14,7 +16,7 @@ if "ping" in st.query_params:
     except Exception as e:
         st.json({"status": "error", "message": str(e)})
     st.stop()
-import streamlit as st
+
 import pandas as pd
 from datetime import datetime, timezone
 from supabase import create_client, Client
@@ -234,18 +236,6 @@ def stock_change(reagent_id, change_type, quantity, operator, remark):
     }).execute()
     st.success(f"试剂 {name} {('入库' if change_type=='in' else '出库')} {quantity}{unit} 成功")
     return True
-
-# ... 前面的导入和配置 ...
-
-
-# ==================== 页面主逻辑 ====================
-# 登录验证已取消 - 2026-07-03
-# if not check_password():
-#     st.stop()
-
-# 下面是你的应用主界面代码
-st.title("试剂出入库管理系统主界面")
-# ... 你的业务逻辑 ...
 
 # ==================== 健康检查（可选）====================
 def health_check():
@@ -521,8 +511,9 @@ def show_transactions():
 # ==================== 主程序 ====================
 def main():
     health_check()
-    if not check_password():
-        return
+    # 登录验证已取消 - 2026-07-03
+    # if not check_password():
+    #     return
 
     # 初始化演示数据（如果表为空）
     init_demo_data()
