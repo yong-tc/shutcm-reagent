@@ -5,6 +5,8 @@ import psycopg2
 # 🚀 保活后门（通过 ?ping=1 唤醒，绕过所有验证）
 # =============================================
 if "ping" in st.query_params:
+    # 为保活响应设置独立的页面配置
+    st.set_page_config(page_title="Health Check", layout="centered")
     try:
         DATABASE_URL = "postgresql://postgres:你的实际密码@db.fvrzorvuebxfauegttfv.supabase.co:5432/postgres"
         conn = psycopg2.connect(DATABASE_URL)
@@ -12,11 +14,13 @@ if "ping" in st.query_params:
         cursor.execute("SELECT 1")
         cursor.close()
         conn.close()
-        st.json({"status": "Database Alive"})
+        # 使用 st.write 输出纯文本，确保兼容性
+        st.write("Database Alive")
     except Exception as e:
-        st.json({"status": "error", "message": str(e)})
-    st.stop()
+        st.write(f"Error: {e}")
+    st.stop()  # 强制终止，不执行任何后续代码
 
+# ==================== 正常应用代码 ====================
 import pandas as pd
 from datetime import datetime, timezone
 from supabase import create_client, Client
