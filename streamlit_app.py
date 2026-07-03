@@ -6,27 +6,22 @@ from supabase import create_client
 # =============================================
 if "ping" in st.query_params:
     try:
-        # 你的 Supabase 连接信息
         SUPABASE_URL = "https://fvrzorvuebxfauegttfv.supabase.co"
         SUPABASE_KEY = "sb_publishable_V8p_pjaQzp9qF01BbMoI2A_s7Y1wAmA"
         
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # 执行极简查询（调用 PostgreSQL 内置函数，不改任何数据）
-        supabase.rpc("pg_sleep", {"seconds": 0.001}).execute()
+        # ✅ 改成查询系统表（100% 不会改动任何数据）
+        supabase.table("pg_stat_database").select("datname").limit(1).execute()
         
-        # 输出成功标志（供 UptimeRobot 关键词监控）
         st.json({"status": "Database Alive", "msg": "Keep-alive successful"})
     except Exception as e:
         st.json({"status": "error", "message": str(e)})
     
-    st.stop()  # 执行完立即退出，完全跳过密码校验
+    st.stop()
 # =============================================
 
-# =============================================
 # 下方继续写你原本的代码（登录逻辑、业务代码等）
-# 不需要做任何改动！
-# =============================================
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
